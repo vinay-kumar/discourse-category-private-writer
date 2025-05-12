@@ -1,32 +1,19 @@
+# Enable or disable the plugin
 category_private_writer_enabled:
-  default: false
+  default: true
   client: true
-  description: "Enable private writer mode for specific categories"
 
-category_private_writer_json:
-  default: "[]"
-  type: json
+# Categories that are private-writer style (comma-separated category IDs)
+category_private_writer_categories:
+  default: ''
   client: true
-  description: |
-    JSON array of configurations for each category.
-    
-    Each entry format:
-    {
-      "category_id": <category_id>,
-      "writer_groups": ["group1", "group2"],
-      "admin_groups": ["group3", "group4"]
-    }
 
-    Example:
-    [
-      {
-        "category_id": 1,
-        "writer_groups": ["writers", "authors"],
-        "admin_groups": ["category_admins"]
-      },
-      {
-        "category_id": 2,
-        "writer_groups": ["students"],
-        "admin_groups": ["teachers", "mentors"]
-      }
-    ]
+# Groups that have writer permissions (comma-separated group IDs)
+category_private_writer_writer_groups:
+  default: ''
+  client: true
+
+# Groups that have admin permissions (comma-separated group IDs)
+category_private_writer_admin_groups:
+  default: ''
+  client: true

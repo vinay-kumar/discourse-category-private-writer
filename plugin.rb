@@ -1,90 +1,93 @@
 # name: discourse-category-private-writer
-# about: Restricts users in configured categories to see only their own topics, while admins see all.
-# version: 0.6
+# version: 1.0
 # authors: Vinay Kumar
+# url: https://github.com/vinay-kumar/discourse-category-private-writer
 
 enabled_site_setting :category_private_writer_enabled
 
 after_initialize do
-  require_dependency 'topic_query'
-  require_dependency 'topic_list'
-
-  module ::CategoryPrivateWriter
-    def self.category_configs
-      JSON.parse(SiteSetting.category_private_writer_json.presence || "[]")
-    rescue JSON::ParserError => e
-      Rails.logger.error("CategoryPrivateWriter JSON Parse Error: #{e.message}")
-      []
-    end
-
-    def self.category_config_for(category_id)
-      category_configs.find { |cfg| cfg["category_id"] == category_id }
-    end
-  end
-
-  class ::TopicQuery
-    alias_method :original_list_latest, :list_latest
-
-    def list_latest(options = {})
-      result = original_list_latest(options)
-
-      if SiteSetting.category_private_writer_enabled && scope_user&.id && !scope_user.staff?
-        result = filter_private_writer_topics(result)
-      end
-
-      result
-    rescue => e
-      Rails.logger.error("CategoryPrivateWriter TopicQuery Error: #{e.message}")
-      result
-    end
-
-    private
-
-    def filter_private_writer_topics(result)
-      user_group_names = (scope_user&.groups&.pluck(:name) || [])
-
-      result.topics = result.topics.select do |topic|
-        cfg = ::CategoryPrivateWriter.category_config_for(topic.category_id)
-        next true unless cfg
-
-        if (user_group_names & cfg["admin_groups"]).any?
-          true
-        elsif (user_group_names & cfg["writer_groups"]).any?
-          topic.user_id == scope_user.id
-        else
-          false
-        end
-      end
-
-      result
-    rescue => e
-      Rails.logger.error("CategoryPrivateWriter filter_private_writer_topics Error: #{e.message}")
-      result
-    end
-  end
-
-  require_dependency 'guardian'
-  class ::Guardian
-    alias_method :original_can_see_topic?, :can_see_topic?
-
+  # Module to extend Guardian for topic visibility
+  module CategoryPrivateWriterGuardian
     def can_see_topic?(topic)
-      return true if original_can_see_topic?(topic)
-      return true if user&.staff?
+      return super unless SiteSetting.category_private_writer_enabled
+      return super unless topic&.category
 
-      if SiteSetting.category_private_writer_enabled && user&.id
-        cfg = ::CategoryPrivateWriter.category_config_for(topic.category_id)
-        if cfg
-          return true if user.id == topic.user_id
-          user_group_names = user.groups.pluck(:name) rescue []
-          return true if (user_group_names & cfg["admin_groups"]).any?
-          return false
-        end
+      # Get private writer categories
+      private_writer_category_ids = SiteSetting.category_private_writer_categories.split('|').map(&:to_i)
+
+      # If topic is not in a private writer category, use default permissions
+      return super unless private_writer_category_ids.include?(topic.category_id)
+
+      # Staff (admins and moderators) see all topics
+      return true if current_user&.admin? || current_user&.moderator?
+
+      # Get writer and admin groups
+      writer_group_ids = SiteSetting.category_private_writer_writer_groups.split('|').map(&:to_i)
+      admin_group_ids = SiteSetting.category_private_writer_admin_groups.split('|').map(&:to_i)
+
+      # Check if user is in writer or admin groups
+      user_group_ids = current_user&.group_ids || []
+
+      # Admins see all topics
+      return true if (user_group_ids & admin_group_ids).any?
+
+      # Writers only see their own topics
+      if (user_group_ids & writer_group_ids).any?
+        return topic.user_id == current_user&.id
       end
 
+      # Non-writers and non-admins cannot see topics in private writer categories
       false
-    rescue => e
-      Rails.logger.error("CategoryPrivateWriter Guardian can_see_topic? Error: #{e.message}")
+    end
+
+    def can_create_topic?(category)
+      return super unless SiteSetting.category_private_writer_enabled
+      return super unless category
+
+      # Get private writer categories
+      private_writer_category_ids = SiteSetting.category_private_writer_categories.split('|').map(&:to_i)
+
+      # If category is not private writer, use default permissions
+      return super unless private_writer_category_ids.include?(category.id)
+
+      # Staff can always create topics
+      return true if current_user&.admin? || current_user&.moderator?
+
+      # Writers can create topics in private writer categories
+      writer_group_ids = SiteSetting.category_private_writer_writer_groups.split('|').map(&:to_i)
+      user_group_ids = current_user&.group_ids || []
+      return true if (user_group_ids & writer_group_ids).any?
+
+      # Non-writers cannot create topics in private writer categories
       false
+    end
+  end
+
+  # Extend Guardian class
+  class ::Guardian
+    prepend CategoryPrivateWriterGuardian
+  end
+
+  # Modify topic query to filter topics for writers
+  add_to_class(:topic_query) do
+    def list_latest
+      query = super
+      if SiteSetting.category_private_writer_enabled && @user && !(@user.admin? || @user.moderator?)
+        private_writer_category_ids = SiteSetting.category_private_writer_categories.split('|').map(&:to_i)
+        writer_group_ids = SiteSetting.category_private_writer_writer_groups.split('|').map(&:to_i)
+        admin_group_ids = SiteSetting.category_private_writer_admin_groups.split('|').map(&:to_i)
+        user_group_ids = @user.group_ids || []
+
+        if (user_group_ids & writer_group_ids).any? && (user_group_ids & admin_group_ids).empty?
+          # Writers only see their own topics in private writer categories
+          query = query.where('topics.category_id NOT IN (?) OR (topics.category_id IN (?) AND topics.user_id = ?)',
+                             private_writer_category_ids, private_writer_category_ids, @user.id)
+        elsif (user_group_ids & admin_group_ids).empty?
+          # Non-writers and non-admins cannot see topics in private writer categories
+          query = query.where('topics.category_id NOT IN (?)', private_writer_category_ids)
+        end
+      end
+      query
     end
   end
 end
