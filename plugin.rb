@@ -1,6 +1,6 @@
 # name: discourse-category-private-writer
 # about: Restricts users in configured categories to see only their own topics, while admins see all.
-# version: 0.5
+# version: 0.6
 # authors: Vinay Kumar
 
 enabled_site_setting :category_private_writer_enabled
