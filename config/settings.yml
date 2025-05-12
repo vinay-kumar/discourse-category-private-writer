@@ -1,0 +1,15 @@
+category_private_writer_enabled:
+  default: false
+  client: true
+  description: "Enable private writer mode for specific categories"
+
+category_private_writer_configurations:
+  default: "1;writers;category_admins"
+  client: true
+  description: |
+    Configurations per category (pipe-separated per category).
+    Format per category: category_id;writer_group1,writer_group2;admin_group1,admin_group2
+
+    Example:
+    1;writers,authors;category_admins
+    2;students;teachers,mentors
