@@ -3,13 +3,30 @@ category_private_writer_enabled:
   client: true
   description: "Enable private writer mode for specific categories"
 
-category_private_writer_configurations:
-  default: "1;writers;category_admins"
+category_private_writer_json:
+  default: "[]"
+  type: json
   client: true
   description: |
-    Configurations per category (pipe-separated per category).
-    Format per category: category_id;writer_group1,writer_group2;admin_group1,admin_group2
+    JSON array of configurations for each category.
+    
+    Each entry format:
+    {
+      "category_id": <category_id>,
+      "writer_groups": ["group1", "group2"],
+      "admin_groups": ["group3", "group4"]
+    }
 
     Example:
-    1;writers,authors;category_admins
-    2;students;teachers,mentors
+    [
+      {
+        "category_id": 1,
+        "writer_groups": ["writers", "authors"],
+        "admin_groups": ["category_admins"]
+      },
+      {
+        "category_id": 2,
+        "writer_groups": ["students"],
+        "admin_groups": ["teachers", "mentors"]
+      }
+    ]

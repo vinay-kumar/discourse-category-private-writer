@@ -1,7 +1,7 @@
 # name: discourse-category-private-writer
 # about: Restricts users in configured categories to see only their own topics, while admins see all.
-# version: 0.4
-# authors: Your Name
+# version: 0.5
+# authors: Vinay Kumar
 
 enabled_site_setting :category_private_writer_enabled
 
@@ -11,22 +11,13 @@ after_initialize do
 
   module ::CategoryPrivateWriter
     def self.category_configs
-      SiteSetting.category_private_writer_configurations
-        .split('|')
-        .map(&:strip)
-        .reject(&:empty?)
-        .map do |config|
-          category_id_str, writers_str, admins_str = config.split(';').map(&:strip)
-          {
-            category_id: category_id_str.to_i,
-            writer_groups: writers_str&.split(',')&.map(&:strip)&.reject(&:empty?) || [],
-            admin_groups: admins_str&.split(',')&.map(&:strip)&.reject(&:empty?) || []
-          }
-        end
+      JSON.parse(SiteSetting.category_private_writer_json || "[]")
+    rescue JSON::ParserError
+      []
     end
 
     def self.category_config_for(category_id)
-      category_configs.find { |cfg| cfg[:category_id] == category_id }
+      category_configs.find { |cfg| cfg["category_id"] == category_id }
     end
   end
 
@@ -52,9 +43,9 @@ after_initialize do
         cfg = ::CategoryPrivateWriter.category_config_for(topic.category_id)
         next true unless cfg
 
-        if (user_group_names & cfg[:admin_groups]).any?
+        if (user_group_names & cfg["admin_groups"]).any?
           true
-        elsif (user_group_names & cfg[:writer_groups]).any?
+        elsif (user_group_names & cfg["writer_groups"]).any?
           topic.user_id == scope_user.id
         else
           false
@@ -77,7 +68,7 @@ after_initialize do
         cfg = ::CategoryPrivateWriter.category_config_for(topic.category_id)
         if cfg
           return true if user.id == topic.user_id
-          return true if (user.groups.pluck(:name) & cfg[:admin_groups]).any?
+          return true if (user.groups.pluck(:name) & cfg["admin_groups"]).any?
           return false
         end
       end
