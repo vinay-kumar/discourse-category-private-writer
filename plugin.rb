@@ -11,8 +11,9 @@ after_initialize do
 
   module ::CategoryPrivateWriter
     def self.category_configs
-      JSON.parse(SiteSetting.category_private_writer_json || "[]")
-    rescue JSON::ParserError
+      JSON.parse(SiteSetting.category_private_writer_json.presence || "[]")
+    rescue JSON::ParserError => e
+      Rails.logger.error("CategoryPrivateWriter JSON Parse Error: #{e.message}")
       []
     end
 
@@ -27,17 +28,20 @@ after_initialize do
     def list_latest(options = {})
       result = original_list_latest(options)
 
-      if SiteSetting.category_private_writer_enabled && scope_user && !scope_user.staff?
+      if SiteSetting.category_private_writer_enabled && scope_user&.id && !scope_user.staff?
         result = filter_private_writer_topics(result)
       end
 
+      result
+    rescue => e
+      Rails.logger.error("CategoryPrivateWriter TopicQuery Error: #{e.message}")
       result
     end
 
     private
 
     def filter_private_writer_topics(result)
-      user_group_names = scope_user.groups.pluck(:name)
+      user_group_names = (scope_user&.groups&.pluck(:name) || [])
 
       result.topics = result.topics.select do |topic|
         cfg = ::CategoryPrivateWriter.category_config_for(topic.category_id)
@@ -53,6 +57,9 @@ after_initialize do
       end
 
       result
+    rescue => e
+      Rails.logger.error("CategoryPrivateWriter filter_private_writer_topics Error: #{e.message}")
+      result
     end
   end
 
@@ -64,15 +71,19 @@ after_initialize do
       return true if original_can_see_topic?(topic)
       return true if user&.staff?
 
-      if SiteSetting.category_private_writer_enabled
+      if SiteSetting.category_private_writer_enabled && user&.id
         cfg = ::CategoryPrivateWriter.category_config_for(topic.category_id)
         if cfg
           return true if user.id == topic.user_id
-          return true if (user.groups.pluck(:name) & cfg["admin_groups"]).any?
+          user_group_names = user.groups.pluck(:name) rescue []
+          return true if (user_group_names & cfg["admin_groups"]).any?
           return false
         end
       end
 
+      false
+    rescue => e
+      Rails.logger.error("CategoryPrivateWriter Guardian can_see_topic? Error: #{e.message}")
       false
     end
   end
